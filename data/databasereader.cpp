@@ -188,7 +188,6 @@ Database DatabaseReader::fromTable(std::ifstream& infile, char delim, double rSa
     std::random_device rd;     // only used once to initialise (seed) engine
     std::mt19937 rng(rd());    // random-number engine used (Mersenne-Twister in this case)
     std::uniform_real_distribution<double> uni(0.0,1.0); // guaranteed unbiased
-    auto random_integer = uni(rng);
     std::vector<int> sColumns;
 	int i = 1;
 	while (std::getline(iss, val, delim)) {

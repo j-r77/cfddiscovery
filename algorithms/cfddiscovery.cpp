@@ -1,36 +1,21 @@
-#include "ctane.h"
+#include "cfddiscovery.h"
 #include "../util/output.h"
 #include "partitiontable.h"
 #include <iterator>
 
-CTane::CTane(Database& db)
-    :BaseMiner(db) {
+CFDDiscovery::CFDDiscovery(Database& db)
+    :fDb(db) {
 }
 
-int CTane::nrCFDs() const {
+int CFDDiscovery::nrCFDs() const {
     return fCFDs.size();
 }
 
-CFDList CTane::getCFDs() const {
+CFDList CFDDiscovery::getCFDs() const {
     return fCFDs;
 }
 
-Itemset CTane::getConstantCFDs(const Itemset& nodeItems, const SimpleTidList& tids, const std::vector<MinerNode<PartitionTidList> >& attrs) {
-    Itemset res;
-    PartitionTidList nodeTidsPart = convert(tids);
-    Itemset nodeAttrs = fDb.getAttrVector(nodeItems);
-    for (const auto& attrNode : attrs) {
-        int attr = -1 - attrNode.fItem;
-        if (std::binary_search(nodeAttrs.begin(), nodeAttrs.end(), attr)) continue;
-        auto isect = PartitionTable::intersection(nodeTidsPart, attrNode.fTids);
-        if (isect.fNrSets == 1) {
-            res.push_back(fDb.getRow(tids[0])[attr]);
-        }
-    }
-    return res;
-}
-
-bool CTane::precedes(const Itemset& a, const Itemset& b) {
+bool CFDDiscovery::precedes(const Itemset& a, const Itemset& b) {
     if (a.size() > b.size()) return false;
     if (a == b) return false;
     Itemset pattern(fDb.nrAttrs());
@@ -52,18 +37,11 @@ bool CTane::precedes(const Itemset& a, const Itemset& b) {
     return true;
 }
 
-void CTane::pruneCands(std::vector<MinerNode<PartitionTidList> >& items, const Itemset& sub, int out) {
-    //Output::printCFD(sub, out, fDb);
-    Itemset wanted = {-11,-8,-6,-4,-3,-1};
-    int wantedRhs = -9;
+void CFDDiscovery::pruneCands(std::vector<MinerNode<PartitionTidList> >& items, const Itemset& sub, int out) {
     Itemset cset = join(sub, out);
-    if (sub == wanted && out == wantedRhs) {
-       // Output::printCFD(sub, out, fDb);
-    }
     for (int i = 0; i < items.size(); i++) {
         MinerNode<PartitionTidList> &inode = items[i];
         const Itemset iset = join(inode.fPrefix, inode.fItem);
-        //if (precedes(sub, iset)) {
         bool applies = false;
         auto nAttrs = fDb.getAttrVectorItems(iset);
         if (out < 0) {
@@ -72,17 +50,6 @@ void CTane::pruneCands(std::vector<MinerNode<PartitionTidList> >& items, const I
         else {
             applies = std::binary_search(iset.begin(), iset.end(), out) || std::binary_search(iset.begin(), iset.end(), -1-fDb.getAttrIndex(out));
         }
-        bool test = false;
-        if (out < 0) {
-            auto rm = setdiff(iset, cset);
-            auto rm2 = setdiff(cset, iset);
-            if (rm.size() == 1 && rm2.size() == 1 && -1-fDb.getAttrIndex(rm[0]) == out) test = true;
-        }
-        if (sub == wanted && out == wantedRhs) {
-            //std::cout << "> "; Output::printItemset(iset, fDb);
-            //std::cout << applies << " " << precedes(sub, iset) << std::endl;
-
-        }
         if (applies && precedes(sub, iset)) {
             if (out < 0)
                 inode.fCands = where(inode.fCands, [this,out](int i){return fDb.getAttrIndex(i) != fDb.getAttrIndex(out);});
@@ -90,23 +57,10 @@ void CTane::pruneCands(std::vector<MinerNode<PartitionTidList> >& items, const I
                 inode.fCands = where(inode.fCands, [this,out](int i){return i < 0 || fDb.getAttrIndex(i) != fDb.getAttrIndex(out);});
             if (inode.fCands.size() && sub.size()) inode.fCands = intersection(inode.fCands, sub);
         }
-        else if (test) {
-            //if (sub == wanted && out == wantedRhs) {
-                //std::cout << "-----" << std::endl;
-                //Output::printCFD(sub, out, fDb);
-                //Output::printItemset(iset, fDb);
-                //inode.fCands = where(inode.fCands, [this,nAttrs](int i){return std::binary_search(nAttrs.begin(), nAttrs.end(), -1-fDb.getAttrIndex(i));});
-            //    Output::printItemset(inode.fCands, fDb);
-            //}
-
-            //inode.fCands = where(inode.fCands, [this,nAttrs](int i){return std::binary_search(nAttrs.begin(), nAttrs.end(), -1-fDb.getAttrIndex(i));});
-            //if (inode.fCands.size() && sub.size()) inode.fCands = intersection(inode.fCands, sub);
-        }
     }
 }
 
-void CTane::pruneCands(std::vector<MinerNode<SimpleTidList> >& items, const Itemset& sub, int out) {
-    //Itemset cset = join(sub, out);
+void CFDDiscovery::pruneCands(std::vector<MinerNode<SimpleTidList> >& items, const Itemset& sub, int out) {
     for (int i = 0; i < items.size(); i++) {
         MinerNode<SimpleTidList> &inode = items[i];
         const Itemset iset = join(inode.fPrefix, inode.fItem);
@@ -116,9 +70,7 @@ void CTane::pruneCands(std::vector<MinerNode<SimpleTidList> >& items, const Item
     }
 }
 
-void CTane::mine(int minsup, int maxSize, double minconf) {
-    fVisited = 0;
-    fValidated = 0;
+void CFDDiscovery::ctane(int minsup, int maxSize, double minconf) {
     fMaxSize = maxSize;
     fMinSup = minsup;
     fMinConf = minconf;
@@ -154,7 +106,6 @@ void CTane::mine(int minsup, int maxSize, double minconf) {
             MinerNode<PartitionTidList>& inode = items[i];
             const Itemset iset = join(inode.fPrefix, inode.fItem);
             auto insect = intersection(iset, inode.fCands);
-            fVisited++;
             if (iset.size() > 1) {
                 for (int out : insect) {
                     Itemset sub = subset(iset, out);
@@ -171,7 +122,6 @@ void CTane::mine(int minsup, int maxSize, double minconf) {
                         continue;
                     }
                     if (support(storedSub->second) < fMinSup) continue;
-                    fValidated++;
                     double e = (out < 0) ? PartitionTable::partitionError(storedSub->second, inode.fTids)
                                          : setdiff(storedSub->second.fTids, inode.fTids.fTids).size();
                     double conf = 1 - (e / support(storedSub->second));
@@ -254,202 +204,7 @@ void CTane::mine(int minsup, int maxSize, double minconf) {
     }
 }
 
-void CTane::mineFree(int minsup, double minconf) {
-    fVisited = 0;
-    fValidated = 0;
-    fMinSup = minsup;
-    fMinConf = minconf;
-    fAllAttrs = range(-fDb.nrAttrs(), 0);
-    PartitionTable::fDbSize = fDb.size();
-    std::vector<MinerNode<PartitionTidList> > items;
-    items = getPartitionSingletons();
-
-    auto constants = getSingletons(fMinSup);
-    for (const auto& cp : constants) {
-        items.emplace_back(cp.fItem, convert(cp.fTids));
-        fAllAttrs.push_back(cp.fItem);
-    }
-    for (auto& a : items) {
-        Itemset at;
-        for (int cat : fAllAttrs) {
-            if (a.fItem < 0 && cat >= 0) continue;
-            if (a.fItem != cat && fDb.getAttrIndex(a.fItem) == fDb.getAttrIndex(cat)) continue;
-            at.push_back(cat);
-        }
-        a.fCands = at;
-        fFreeMap[std::make_pair(support(a.fTids),a.fTids.fNrSets)].push_back(itemset(a.fItem));
-        fFreeItemsets.insert(itemset(a.fItem));
-    }
-    fCandStore = PrefixTree<Itemset, Itemset>();
-    fGens.addMinGen(Itemset(), support(convert(iota(fDb.size()))), 0);
-    fStore[Itemset()] = convert(iota(fDb.size()));
-    fCandStore.insert(Itemset(), fAllAttrs);
-
-    while (!items.empty()) {
-        std::map<Itemset,PartitionTidList> newStore;
-        PrefixTree<Itemset, Itemset> newCandStore;
-        std::vector<std::vector<std::pair<Itemset,int> > > next(items.size());
-        for (int i = 0; i < items.size(); i++) {
-            fVisited++;
-            MinerNode<PartitionTidList>& inode = items[i];
-            const Itemset iset = join(inode.fPrefix, inode.fItem);
-            auto insect = intersection(iset, inode.fCands);
-
-            for (int out : insect) {
-                Itemset sub = subset(iset, out);
-                // Discard Variable -> Constant and Constant -> Variable CFDs
-                if (out < 0) {
-                    if (sub.size() && !has(sub, [](int si) -> bool { return si < 0; })) continue;
-                    if (inode.fTids.fNrSets == 1) continue;
-                }
-                else {
-                    if (!sub.size() || has(sub, [](int si) -> bool { return si < 0; })) continue;
-                }
-                auto storedSub = fStore.find(sub);
-                if (storedSub == fStore.end()) {
-                    continue;
-                }
-                Itemset cSub = sub;
-                bool lhsGen = true;
-                auto rsPtr = fRules.find(out);
-                if (rsPtr != fRules.end()) {
-                    for (const auto& subRule : rsPtr->second) {
-                        if (out < 0 && !has(subRule, [](int si) -> bool { return si < 0; })) continue;
-                        if (precedes(subRule, cSub)) {
-                            lhsGen = false;
-                            break;
-                        }
-                    }
-                }
-                if (lhsGen && out < 0) {
-                    rsPtr = fRules.find(-1-fDb.getAttrIndex(out));
-                    if (rsPtr != fRules.end()) {
-                        for (const auto& subRule : rsPtr->second) {
-                            if (precedes(subRule, cSub)) {
-                                lhsGen = false;
-                                break;
-                            }
-                        }
-                    }
-                }
-                if (!lhsGen) continue;
-                fValidated++;
-
-                double e = out < 0 ? PartitionTable::partitionError(storedSub->second, inode.fTids)
-                                   : setdiff(storedSub->second.fTids, inode.fTids.fTids).size();
-                double conf = 1 - (e / support(storedSub->second));
-                if (conf >= fMinConf) {
-                    fCFDs.emplace_back(cSub, out);
-                }
-                if (conf >= 1) {
-                    fRules[out].push_back(cSub);
-                    if (out > 0) fRules[-1 - fDb.getAttrIndex(out)].push_back(cSub);
-                    inode.fCands = intersection(inode.fCands, cSub);
-                    pruneCands(items, sub, out);
-                }
-            }
-            if (inode.fCands.empty()) continue;
-            //if (!fGens.addMinGen(where(iset, [](int i){return i >= 0;}), inode.fSupp, inode.fHash)) continue;
-
-            newStore[iset] = inode.fTids;
-            auto nodeAttrs = fDb.getAttrVector(iset);
-            for (int j = i+1; j < items.size(); j++) {
-                if (j == i) continue;
-                const auto& jnode = items[j];
-                if (jnode.fPrefix != inode.fPrefix) continue;
-                if (std::binary_search(nodeAttrs.begin(), nodeAttrs.end(), fDb.getAttrIndex(jnode.fItem))) continue;
-                next[i].emplace_back(iset, j);
-            }
-        }
-        for (int i = 0; i < items.size(); i++) {
-            MinerNode<PartitionTidList> &inode = items[i];
-            const Itemset iset = join(inode.fPrefix, inode.fItem);
-            newCandStore.insert(iset, inode.fCands);
-        }
-
-        std::vector<MinerNode<PartitionTidList> > suffix;
-        for (int i = 0; i < items.size(); i++) {
-            std::vector<PartitionTidList*> expands;
-            std::vector<MinerNode<PartitionTidList> > tmpSuffix;
-            for (auto& newsetTup : next[i]) {
-                int j = newsetTup.second;
-                Itemset newset = join(newsetTup.first, items[j].fItem);
-                auto c = intersection(items[i].fCands, items[j].fCands);
-                for (int zz : newset) {
-                    auto zsub = subset(newset, zz);
-                    auto storedSub = newStore.find(zsub);
-                    if (storedSub == newStore.end()) {
-                        c.clear();
-                        break;
-                    }
-                    auto subCandsPtr = newCandStore.find(zsub);
-                    if (subCandsPtr) {
-                        const Itemset& subCands = *subCandsPtr;
-                        if (subCands.size()) c = intersection(c, subCands);
-                        else c.clear();
-                    }
-                    else c.clear();
-                    if (c.empty()) break;
-                }
-                if (c.size()) {
-                    expands.push_back(&items[j].fTids);
-                    tmpSuffix.emplace_back(items[j].fItem);
-                    tmpSuffix.back().fCands = c;
-                    tmpSuffix.back().fPrefix = newsetTup.first;
-                }
-            }
-            const auto exps = PartitionTable::intersection(items[i].fTids, expands);
-            for (int e = 0; e < exps.size(); e++) {
-                if (support(exps[e]) >= fMinSup) {
-                    bool gen = true;
-                    auto c = tmpSuffix[e].fCands;
-                    bool subgen = false;
-                    auto newset = join(tmpSuffix[e].fPrefix, tmpSuffix[e].fItem);
-                    auto sp = std::make_pair(support(exps[e]), exps[e].fNrSets);
-                    auto fm2 = fFreeMap.find(sp);
-                    if (fm2 != fFreeMap.end()) {
-                        auto freeCands = fm2->second;
-                        for (const auto &subCand : freeCands) {
-                            if (isSubsetOf(subCand, newset)) {
-                                gen = false;
-                            }
-                        }
-                    }
-                    if (gen) {
-                        fFreeMap[sp].push_back(newset);
-                        fFreeItemsets.insert(newset);
-                    }
-                    else {
-                        for (const auto &a : newset) {
-                            auto x = subset(newset, a);
-                            if (fFreeItemsets.find(x) == fFreeItemsets.end()) {
-                                c = intersection(c, x);
-                            }
-                            if (!c.size()) break;
-                            if (a > 0) {
-                                auto y = join(x,-1-fDb.getAttrIndex(a));
-                                if (fFreeItemsets.find(y) == fFreeItemsets.end()) {
-                                    c = intersection(c, join(y,a));
-                                }
-                            }
-                            if (!c.size()) break;
-                        }
-                    }
-                    if (c.size()) {
-                        suffix.emplace_back(tmpSuffix[e].fItem, exps[e]);
-                        suffix.back().fCands = c;
-                        suffix.back().fPrefix = tmpSuffix[e].fPrefix;
-                    }
-                }
-            }
-        }
-        fStore.swap(newStore);
-        //fCandStore = newCandStore;
-        items.swap(suffix);
-    }
-}
-
-bool CTane::isConstRule(const PartitionTidList& items, int rhsA) {
+bool CFDDiscovery::isConstRule(const PartitionTidList& items, int rhsA) {
     int rhsVal;
     bool first = true;
     for (int pi = 0; pi <= items.fTids.size(); pi++) {
@@ -467,22 +222,7 @@ bool CTane::isConstRule(const PartitionTidList& items, int rhsA) {
     return true;
 }
 
-bool CTane::isConstRulePart(const SimpleTidList& items, const Itemset& rhses) {
-    int rhsVal;
-    bool first = true;
-    for (int pi : items) {
-        if (first) {
-            first = false;
-            rhsVal = rhses[pi];
-        }
-        else {
-            if (rhses[pi] != rhsVal) return false;
-        }
-    }
-    return true;
-}
-
-void CTane::mineFreeDepth(const Itemset& prefix, std::vector<MinerNode<PartitionTidList> >& items) {
+void CFDDiscovery::integratedDFS(const Itemset &prefix, std::vector<MinerNode<PartitionTidList> > &items) {
     for (int ix = items.size()-1; ix >= 0; ix--) {
         MinerNode<PartitionTidList>& inode = items[ix];
         const Itemset iset = join(prefix, inode.fItem);
@@ -609,12 +349,12 @@ void CTane::mineFreeDepth(const Itemset& prefix, std::vector<MinerNode<Partition
                 int bAtt = fDb.getAttrIndex(b.fItem);
                 return fAttOrder[aAtt] < fAttOrder[bAtt] || (aAtt == bAtt && ((a.fItem > 0 && b.fItem < 0) || (a.fItem > 0 && b.fItem > 0 && support(a.fTids) > support(b.fTids))));
             });
-            mineFreeDepth(iset, suffix);
+            integratedDFS(iset, suffix);
         }
     }
 }
 
-void CTane::mineFreeDepth(int minsup, int maxSize, double minconf) {
+void CFDDiscovery::integratedDFS(int minsup, int maxSize, double minconf) {
     fMinSup = minsup;
     fMinConf = minconf;
     fMaxSize = maxSize;
@@ -650,38 +390,10 @@ void CTane::mineFreeDepth(int minsup, int maxSize, double minconf) {
         int bAtt = fDb.getAttrIndex(b.fItem);
         return fAttOrder[aAtt] > fAttOrder[bAtt] || (aAtt == bAtt && ((a.fItem > 0 && b.fItem < 0) || (a.fItem > 0 && b.fItem > 0 && support(a.fTids) > support(b.fTids))));
     });
-    mineFreeDepth(Itemset(), items);
+    integratedDFS(Itemset(), items);
 }
 
-std::vector<std::pair<Itemset,SimpleTidList> > CTane::getItemsetLayer() {
-    std::vector<std::pair<Itemset,SimpleTidList> > res;
-    std::vector<MinerNode<SimpleTidList> > suffix;
-    for (int i = 0; i < fItemsLayer.size(); i++) {
-        const auto &inode = fItemsLayer[i];
-        Itemset iset = join(inode.fPrefix, inode.fItem);
-        if (!fGens.addMinGen(iset, inode.fSupp, inode.fHash)) continue;
-
-        res.emplace_back(iset, inode.fTids);
-        for (int j = i + 1; j < fItemsLayer.size(); j++) {
-            const auto &jnode = fItemsLayer[j];
-            if (jnode.fPrefix != inode.fPrefix) continue;
-            Itemset jset = join(jnode.fPrefix, jnode.fItem);
-            Itemset newset = join(iset, jset);
-            SimpleTidList ijtids = intersection(inode.fTids, jnode.fTids);
-            int ijsupp = ijtids.size();
-            if (ijsupp >= fMinSup && ijsupp != inode.fSupp){
-                int jtem = newset.back();
-                newset.pop_back();
-                suffix.emplace_back(jtem, std::move(ijtids), ijsupp, newset);
-            }
-        }
-    }
-    std::sort(suffix.begin(), suffix.end());
-    fItemsLayer.swap(suffix);
-    return res;
-}
-
-void CTane::mineItemsetsFirstDepth(int minsup, int maxSize, SUBSTRATEGY ss, double minconf) {
+void CFDDiscovery::itemsetsFirstDFS(int minsup, int maxSize, SUBSTRATEGY ss, double minconf) {
     fMinSup = minsup;
     fMinConf = minconf;
     fMaxSize = maxSize;
@@ -703,13 +415,14 @@ void CTane::mineItemsetsFirstDepth(int minsup, int maxSize, SUBSTRATEGY ss, doub
         fFreeItemsets.insert(itemset(a.fItem));
     }
     if (ss == SUBSTRATEGY::DFS)
-        mineFDsDepth(iota(fDb.size()), Itemset(), range(-fDb.nrAttrs(), 0));
+        mineFDsDFS(iota(fDb.size()), Itemset(), range(-fDb.nrAttrs(), 0));
     else if (ss == SUBSTRATEGY::BFS)
         mineFDs(iota(fDb.size()), Itemset(), range(-fDb.nrAttrs(), 0));
-    mineItemsetsFirstDepth(Itemset(), items, ss);
+    itemsetsFirstDFS(Itemset(), items, ss);
 }
 
-void CTane::mineItemsetsFirstDepth(const Itemset& prefix, std::vector<MinerNode<SimpleTidList> >& items, SUBSTRATEGY ss) {
+void CFDDiscovery::itemsetsFirstDFS(const Itemset &prefix, std::vector<MinerNode<SimpleTidList> > &items,
+                                    SUBSTRATEGY ss) {
     for (int ix = items.size()-1; ix >= 0; ix--) {
         MinerNode<SimpleTidList>& inode = items[ix];
         const Itemset iset = join(prefix, inode.fItem);
@@ -759,7 +472,7 @@ void CTane::mineItemsetsFirstDepth(const Itemset& prefix, std::vector<MinerNode<
             Itemset allAttrs = intersection(cAs, setdiff(range(-fDb.nrAttrs(), 0), nodeAttrs));
             if (inode.fSupp >= fMinSup && allAttrs.size()) {
                 if (ss == SUBSTRATEGY::DFS)
-                    mineFDsDepth(inode.fTids, iset, allAttrs);
+                    mineFDsDFS(inode.fTids, iset, allAttrs);
                 else if (ss == SUBSTRATEGY::BFS)
                     mineFDs(inode.fTids, iset, allAttrs);
             }
@@ -815,12 +528,12 @@ void CTane::mineItemsetsFirstDepth(const Itemset& prefix, std::vector<MinerNode<
             std::sort(suffix.begin(), suffix.end(), [this](const MinerNode<SimpleTidList>& a, const MinerNode<SimpleTidList>& b) {
                 return support(a.fTids) < support(b.fTids);
             });
-            mineItemsetsFirstDepth(iset, suffix, ss);
+            itemsetsFirstDFS(iset, suffix, ss);
         }
     }
 }
 
-void CTane::mineFDsDepth(const SimpleTidList& tids, const Itemset& tp, const Itemset& allAttrs) {
+void CFDDiscovery::mineFDsDFS(const SimpleTidList &tids, const Itemset &tp, const Itemset &allAttrs) {
     PartitionTable::fDbSize = fDb.size();
     Itemset allAtt;
     for (int a : allAttrs) {
@@ -838,10 +551,11 @@ void CTane::mineFDsDepth(const SimpleTidList& tids, const Itemset& tp, const Ite
     fStore.clear();
     fStore[Itemset()] = convert(tids);
     candStore.insert(Itemset(), allAttrs);
-    mineFDsDepth(items, Itemset(), tp);
+    mineFDsDFS(items, Itemset(), tp);
 }
 
-void CTane::mineFDsDepth(std::vector<MinerNode<PartitionTidList> >& items, const Itemset& prefix, const Itemset& tp) {
+void CFDDiscovery::mineFDsDFS(std::vector<MinerNode<PartitionTidList> > &items, const Itemset &prefix,
+                              const Itemset &tp) {
     for (int ix = items.size() - 1; ix >= 0; ix--) {
         MinerNode<PartitionTidList> &inode = items[ix];
         const Itemset iset = join(prefix, inode.fItem);
@@ -897,7 +611,6 @@ void CTane::mineFDsDepth(std::vector<MinerNode<PartitionTidList> >& items, const
             auto nodeAttrs = fDb.getAttrVector(iset);
             if (jnode.fPrefix != inode.fPrefix) continue;
             if (std::binary_search(nodeAttrs.begin(), nodeAttrs.end(), fDb.getAttrIndex(jnode.fItem))) continue;
-            int j = jnode.fItem;
             Itemset newset = join(iset, items[jx].fItem);
             auto c = inode.fCands;
             for (int zz : newset) {
@@ -935,22 +648,20 @@ void CTane::mineFDsDepth(std::vector<MinerNode<PartitionTidList> >& items, const
                 fFreeMap[sp].push_back(newset);
                 fFreeItemsets.insert(newset);
             }
-            //if (c.size()) {*/
             suffix.emplace_back(tmpSuffix[e].fItem, exps[e]);
             suffix.back().fCands = tmpSuffix[e].fCands;
             suffix.back().fPrefix = tmpSuffix[e].fPrefix;
-            //}
         }
         if (suffix.size()) {
             std::sort(suffix.begin(), suffix.end(), [this](const MinerNode<PartitionTidList>& a, const MinerNode<PartitionTidList>& b) {
                 return a.fTids.fNrSets < b.fTids.fNrSets;
             });
-            mineFDsDepth(suffix, iset, tp);
+            mineFDsDFS(suffix, iset, tp);
         }
     }
 }
 
-void CTane::mineItemsetsFirst(int minsup, int maxSize, SUBSTRATEGY ss, double minconf) {
+void CFDDiscovery::itemsetsFirstBFS(int minsup, int maxSize, SUBSTRATEGY ss, double minconf) {
     fMinSup = minsup;
     fMinConf = minconf;
     fMaxSize = maxSize;
@@ -972,7 +683,7 @@ void CTane::mineItemsetsFirst(int minsup, int maxSize, SUBSTRATEGY ss, double mi
         fFreeItemsets.insert(itemset(a.fItem));
     }
     if (ss == SUBSTRATEGY::DFS)
-        mineFDsDepth(iota(fDb.size()), Itemset(), range(-fDb.nrAttrs(), 0));
+        mineFDsDFS(iota(fDb.size()), Itemset(), range(-fDb.nrAttrs(), 0));
     else if (ss == SUBSTRATEGY::BFS)
         mineFDs(iota(fDb.size()), Itemset(), range(-fDb.nrAttrs(), 0));
     while (items.size()) {
@@ -1027,7 +738,7 @@ void CTane::mineItemsetsFirst(int minsup, int maxSize, SUBSTRATEGY ss, double mi
                 Itemset allAttrs = intersection(cAs, setdiff(range(-fDb.nrAttrs(), 0), nodeAttrs));
                 if (inode.fSupp >= fMinSup && allAttrs.size()) {
                     if (ss == SUBSTRATEGY::DFS)
-                        mineFDsDepth(inode.fTids, iset, allAttrs);
+                        mineFDsDFS(inode.fTids, iset, allAttrs);
                     else if (ss == SUBSTRATEGY::BFS)
                         mineFDs(inode.fTids, iset, allAttrs);
                 }
@@ -1096,7 +807,7 @@ void CTane::mineItemsetsFirst(int minsup, int maxSize, SUBSTRATEGY ss, double mi
     }
 }
 
-void CTane::mineFDs(const SimpleTidList& tids, const Itemset& tp, const Itemset& allAttrs) {
+void CFDDiscovery::mineFDs(const SimpleTidList& tids, const Itemset& tp, const Itemset& allAttrs) {
     PartitionTable::fDbSize = fDb.size();
     Itemset allAtt;
     for (int a : allAttrs) {
@@ -1121,7 +832,6 @@ void CTane::mineFDs(const SimpleTidList& tids, const Itemset& tp, const Itemset&
         PrefixTree<Itemset, Itemset> newCandStore;
         std::vector<std::vector<std::pair<Itemset,int> > > next(items.size());
         for (int i = 0; i < items.size(); i++) {
-            fVisited++;
             MinerNode<PartitionTidList>& inode = items[i];
             const Itemset iset = join(inode.fPrefix, inode.fItem);
             auto insect = intersection(iset, inode.fCands);
@@ -1234,7 +944,7 @@ void CTane::mineFDs(const SimpleTidList& tids, const Itemset& tp, const Itemset&
     }
 }
 
-void CTane::mineFDsFirstDepth(int minsup, int maxSize, SUBSTRATEGY ss, double minconf) {
+void CFDDiscovery::fdsFirstDFS(int minsup, int maxSize, SUBSTRATEGY ss, double minconf) {
     fMinSup = minsup;
     fMinConf = minconf;
     fMaxSize = maxSize;
@@ -1249,10 +959,10 @@ void CTane::mineFDsFirstDepth(int minsup, int maxSize, SUBSTRATEGY ss, double mi
     fCandStore = PrefixTree<Itemset, Itemset>();
     fStore[Itemset()] = convert(iota(fDb.size()));
     fCandStore.insert(Itemset(), fAllAttrs);
-    mineFDsFirstDepth(Itemset(), items, ss);
+    fdsFirstDFS(Itemset(), items, ss);
 }
 
-void CTane::mineFDsFirstDepth(const Itemset& prefix, std::vector<MinerNode<PartitionTidList> >& items, SUBSTRATEGY ss) {
+void CFDDiscovery::fdsFirstDFS(const Itemset &prefix, std::vector<MinerNode<PartitionTidList> > &items, SUBSTRATEGY ss) {
     for (int ix = items.size()-1; ix >= 0; ix--) {
         MinerNode<PartitionTidList>& inode = items[ix];
         const Itemset iset = join(prefix, inode.fItem);
@@ -1287,9 +997,9 @@ void CTane::mineFDsFirstDepth(const Itemset& prefix, std::vector<MinerNode<Parti
                 }
             }
             if (ss == SUBSTRATEGY::DFS)
-                mineTPsDepth(sub, out, storedSub->second, inode.fTids);
+                minePatternsDFS(sub, out, inode.fTids);
             else if (ss == SUBSTRATEGY::BFS)
-                mineTPs(sub, out, storedSub->second, inode.fTids);
+                minePatternsBFS(sub, out, inode.fTids);
         }
         if (inode.fCands.empty()) continue;
         if (iset.size() == fMaxSize) continue;
@@ -1350,12 +1060,12 @@ void CTane::mineFDsFirstDepth(const Itemset& prefix, std::vector<MinerNode<Parti
             std::sort(suffix.begin(), suffix.end(), [this](const MinerNode<PartitionTidList>& a, const MinerNode<PartitionTidList>& b) {
                 return a.fTids.fNrSets < b.fTids.fNrSets;
             });
-            mineFDsFirstDepth(iset, suffix, ss);
+            fdsFirstDFS(iset, suffix, ss);
         }
     }
 }
 
-void CTane::mineFDsFirst(int minsup, int maxSize, SUBSTRATEGY ss, double minconf) {
+void CFDDiscovery::fdsFirstBFS(int minsup, int maxSize, SUBSTRATEGY ss, double minconf) {
     fMinSup = minsup;
     fMinConf = minconf;
     fMaxSize = maxSize;
@@ -1410,9 +1120,9 @@ void CTane::mineFDsFirst(int minsup, int maxSize, SUBSTRATEGY ss, double minconf
                 }
 
                 if (ss == SUBSTRATEGY::DFS)
-                    mineTPsDepth(sub, out, storedSub->second, inode.fTids);
+                    minePatternsDFS(sub, out, inode.fTids);
                 else if (ss == SUBSTRATEGY::BFS)
-                    mineTPs(sub, out, storedSub->second, inode.fTids);
+                    minePatternsBFS(sub, out, inode.fTids);
             }
             if (inode.fCands.empty()) continue;
             if (iset.size() == fMaxSize) continue;
@@ -1490,7 +1200,7 @@ void CTane::mineFDsFirst(int minsup, int maxSize, SUBSTRATEGY ss, double minconf
     }
 }
 
-int CTane::getPartitionSupport(const SimpleTidList& pids, const std::vector<int>& psupps) {
+int CFDDiscovery::getPartitionSupport(const SimpleTidList& pids, const std::vector<int>& psupps) {
     int res = 0;
     for (int p : pids) {
         res += psupps[p];
@@ -1498,7 +1208,7 @@ int CTane::getPartitionSupport(const SimpleTidList& pids, const std::vector<int>
     return res;
 }
 
-int CTane::getPartitionError(const SimpleTidList& pids, const std::vector<std::pair<Itemset, std::vector<int> > >& partitions) {
+int CFDDiscovery::getPartitionError(const SimpleTidList& pids, const std::vector<std::pair<Itemset, std::vector<int> > >& partitions) {
     int res = 0;
     for (int p : pids) {
         int max = 0;
@@ -1514,7 +1224,8 @@ int CTane::getPartitionError(const SimpleTidList& pids, const std::vector<std::p
     return res;
 }
 
-bool CTane::isConstRulePart2(const SimpleTidList& items, const std::vector<std::vector<std::pair<int,int> > >& rhses) {
+bool CFDDiscovery::isConstRulePartition(const SimpleTidList &items,
+                                        const std::vector<std::vector<std::pair<int, int> > > &rhses) {
     int rhsVal;
     bool first = true;
     for (int pi : items) {
@@ -1530,7 +1241,7 @@ bool CTane::isConstRulePart2(const SimpleTidList& items, const std::vector<std::
     return true;
 }
 
-void CTane::mineTPs(const Itemset& lhs, int rhs, const PartitionTidList& lhsTids, const PartitionTidList& allTids) {
+void CFDDiscovery::minePatternsBFS(const Itemset &lhs, int rhs, const PartitionTidList &allTids) {
     std::map<int, SimpleTidList> pidlists;
     auto lhsAttrs = fDb.getAttrVector(lhs);
     std::vector<std::pair<Itemset, std::vector<int> > > partitions;
@@ -1613,7 +1324,7 @@ void CTane::mineTPs(const Itemset& lhs, int rhs, const PartitionTidList& lhsTids
             int out = (iset.size() == lhs.size()) ? getMaxElem(rhses2[inode.fTids[0]]) : rhs;
             auto sub = join(iset, setdiff(lhs, nodeAttrs));
 
-            if (out > 0 || !isConstRulePart2(inode.fTids, rhses2)) {
+            if (out > 0 || !isConstRulePartition(inode.fTids, rhses2)) {
                 if (fRules.find(out) != fRules.end()) {
                     for (const auto &subRule : fRules[out]) {
                         if (out < 0 && !has(subRule, [](int si) -> bool { return si < 0; })) continue;
@@ -1676,7 +1387,7 @@ void CTane::mineTPs(const Itemset& lhs, int rhs, const PartitionTidList& lhsTids
     }
 }
 
-void CTane::mineTPsDepth(const Itemset& lhs, int rhs, const PartitionTidList& lhsTids, const PartitionTidList& allTids) {
+void CFDDiscovery::minePatternsDFS(const Itemset &lhs, int rhs, const PartitionTidList &allTids) {
     std::map<int, SimpleTidList> pidlists;
     auto lhsAttrs = fDb.getAttrVector(lhs);
     std::vector<std::pair<Itemset, std::vector<int> > > partitions;
@@ -1748,11 +1459,14 @@ void CTane::mineTPsDepth(const Itemset& lhs, int rhs, const PartitionTidList& lh
             items.emplace_back(item.first, item.second, psupp);
         }
     }
-    mineTPsDepth(Itemset(), items, lhs, rhs, rhses2, partitions, psupps);
+    minePatternsDFS(Itemset(), items, lhs, rhs, rhses2, partitions, psupps);
 }
 
-void CTane::mineTPsDepth(const Itemset& prefix, std::vector<MinerNode<SimpleTidList> >& items, const Itemset& lhs, int rhs,
-                         std::vector<std::vector<std::pair<int,int> > >& rhses2, std::vector<std::pair<Itemset, std::vector<int> > >& partitions, std::vector<int>& psupps) {
+void CFDDiscovery::minePatternsDFS(const Itemset &prefix, std::vector<MinerNode<SimpleTidList> > &items,
+                                   const Itemset &lhs, int rhs,
+                                   std::vector<std::vector<std::pair<int, int> > > &rhses2,
+                                   std::vector<std::pair<Itemset, std::vector<int> > > &partitions,
+                                   std::vector<int> &psupps) {
     for (int ix = items.size()-1; ix >= 0; ix--) {
         const auto &inode = items[ix];
         Itemset iset = join(prefix, inode.fItem);
@@ -1761,7 +1475,7 @@ void CTane::mineTPsDepth(const Itemset& prefix, std::vector<MinerNode<SimpleTidL
         int out = (iset.size() == lhs.size()) ? getMaxElem(rhses2[inode.fTids[0]]) : rhs;
         auto sub = join(iset, setdiff(lhs, nodeAttrs));
 
-        if (out > 0 || !isConstRulePart2(inode.fTids, rhses2)) {
+        if (out > 0 || !isConstRulePartition(inode.fTids, rhses2)) {
             if (fRules.find(out) != fRules.end()) {
                 for (const auto &subRule : fRules[out]) {
                     if (out < 0 && !has(subRule, [](int si) -> bool { return si < 0; })) continue;
@@ -1819,7 +1533,122 @@ void CTane::mineTPsDepth(const Itemset& prefix, std::vector<MinerNode<SimpleTidL
             std::sort(suffix.begin(), suffix.end(), [this](const MinerNode<SimpleTidList>& a, const MinerNode<SimpleTidList>& b) {
                 return support(a.fTids) < support(b.fTids);
             });
-            mineTPsDepth(iset, suffix, lhs, rhs, rhses2, partitions, psupps);
+            minePatternsDFS(iset, suffix, lhs, rhs, rhses2, partitions, psupps);
         }
     }
+}
+
+std::vector<MinerNode<PartitionTidList> > CFDDiscovery::getPartitionSingletons() {
+    std::vector<std::vector<SimpleTidList> > partitions(fDb.nrAttrs());
+    std::unordered_map<int, std::pair<int,int> > attrIndices;
+    for (int a = 0; a < fDb.nrAttrs(); a++) {
+        const auto& dom = fDb.getDomain(a);
+        partitions[a] = std::vector<SimpleTidList>(dom.size());
+        for (int i = 0; i < dom.size(); i++) {
+            partitions[a][i].reserve(fDb.frequency(dom[i]));
+            attrIndices[dom[i]] = std::make_pair(a, i);
+        }
+    }
+    for (unsigned row = 0; row < fDb.size(); row++) {
+        const auto& tup = fDb.getRow(row);
+        for (int item : tup) {
+            const auto& attrNodeIx = attrIndices.at(item);
+            partitions[attrNodeIx.first][attrNodeIx.second].push_back(row);
+        }
+    }
+    std::vector<MinerNode<PartitionTidList> > singletons;
+    for (int a = 0; a < fDb.nrAttrs(); a++) {
+        int attrItem = -1 - a;
+        singletons.push_back(MinerNode<PartitionTidList>(attrItem));
+        const auto& dom = fDb.getDomain(a);
+        singletons.back().fTids.fTids.reserve(fDb.size()+dom.size()-1);
+        singletons.back().fTids.fNrSets = dom.size();
+        for (int i = 0; i < dom.size(); i++) {
+            auto& ts = singletons.back().fTids.fTids;
+            ts.insert(ts.end(), partitions[a][i].begin(), partitions[a][i].end());
+            if (i < dom.size() - 1) {
+                ts.push_back(PartitionTidList::SEP);
+            }
+        }
+        singletons.back().hashTids();
+    }
+    return singletons;
+}
+
+std::vector<MinerNode<PartitionTidList> > CFDDiscovery::getPartitionSingletons(const SimpleTidList& tids, const Itemset& attrs) {
+    std::vector<std::vector<SimpleTidList> > partitions(fDb.nrAttrs());
+    std::unordered_map<int, std::pair<int,int> > attrIndices;
+    for (int a : attrs) {
+        const auto& dom = fDb.getDomain(a);
+        partitions[a] = std::vector<SimpleTidList>(dom.size());
+        for (int i = 0; i < dom.size(); i++) {
+            //partitions[a][i].reserve(fDb.frequency(dom[i]));
+            attrIndices[dom[i]] = std::make_pair(a, i);
+        }
+    }
+    for (int row: tids) {
+        const auto& tup = fDb.getRow(row);
+        for (int a : attrs) {
+            int item = tup[a];
+            const auto& attrNodeIx = attrIndices.at(item);
+            partitions[attrNodeIx.first][attrNodeIx.second].push_back(row);
+        }
+    }
+    std::vector<MinerNode<PartitionTidList> > singletons;
+    for (int a : attrs) {
+        int attrItem = -1 - a;
+        singletons.push_back(MinerNode<PartitionTidList>(attrItem));
+        const auto& dom = fDb.getDomain(a);
+        singletons.back().fTids.fTids.reserve(tids.size()+dom.size()-1);
+        singletons.back().fTids.fNrSets = 0;//dom.size();
+        for (int i = 0; i < dom.size(); i++) {
+            if (partitions[a][i].size()) {
+                singletons.back().fTids.fNrSets++;
+                auto &ts = singletons.back().fTids.fTids;
+                ts.insert(ts.end(), partitions[a][i].begin(), partitions[a][i].end());
+                ts.push_back(PartitionTidList::SEP);
+            }
+        }
+        singletons.back().fTids.fTids.pop_back();
+        singletons.back().hashTids();
+    }
+    return singletons;
+}
+
+std::vector<MinerNode<PartitionTidList> > CFDDiscovery::getAllSingletons(int minsup) {
+    auto parts = getPartitionSingletons();
+    auto singles = getSingletons(minsup);
+    for (const auto& sing : singles) {
+        parts.push_back(MinerNode<PartitionTidList>(sing.fItem));
+        parts.back().fTids = {sing.fTids, 1};
+    }
+    return parts;
+}
+
+std::vector<MinerNode<SimpleTidList> > CFDDiscovery::getSingletons(int minsup) {
+    std::vector<MinerNode<SimpleTidList> > singletons;
+    std::unordered_map<int, int> nodeIndices;
+    for (unsigned item = 1; item <= fDb.nrItems(); item++) {
+        if (fDb.frequency(item) >= minsup) {
+            singletons.push_back(MinerNode<SimpleTidList>(item, fDb.frequency(item)));
+            nodeIndices[item] = singletons.size() - 1;
+        }
+    }
+
+    for (unsigned row = 0; row < fDb.size(); row++) {
+        const auto& tup = fDb.getRow(row);
+        for (int item : tup) {
+            const auto& it = nodeIndices.find(item);
+            if (it != nodeIndices.end()) {
+                singletons[it->second].fTids.push_back(row);
+            }
+        }
+    }
+
+    //std::sort(singletons.begin(), singletons.end());
+    for (int i = singletons.size() - 1; i >= 0; i--) {
+        auto& node = singletons[i];
+        node.hashTids();
+    }
+    return singletons;
 }

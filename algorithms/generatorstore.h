@@ -1,12 +1,9 @@
-#ifndef ALGORITHMS_BASEMINER_H_
-#define ALGORITHMS_BASEMINER_H_
+#ifndef CFDD_GENERATORSTORE_H
+#define CFDD_GENERATORSTORE_H
 
 #include <map>
-#include <vector>
-#include "minernode.h"
 #include "../util/prefixtree.h"
-#include "partitiontable.h"
-#include "cfdindex.h"
+#include "../util/setutil.h"
 
 template<typename T>
 class GeneratorStore {
@@ -61,32 +58,4 @@ private:
     std::map<T, PrefixTree<Itemset,int>> fGenMap;
 };
 
-class BaseMiner {
-public:
-    BaseMiner(Database&);
-    std::vector<MinerNode<PartitionTidList> > getPartitionSingletons();
-    std::vector<MinerNode<PartitionTidList> > getPartitionSingletons(const SimpleTidList&, const Itemset&);
-    PartitionTidList getTids(const Itemset&, const Database& db);
-    std::vector<MinerNode<PartitionTidList> > getAllSingletons(int);
-    std::vector<MinerNode<SimpleTidList> > getSingletons(int);
-    std::vector<int> filterSameAttr(const Itemset&, const std::vector<int>&) const;
-    std::vector<SimpleTidList> bucketTids(const std::vector<int>&, const SimpleTidList&) const;
-    bool getDiffsets(std::vector<Diffset>&);
-    bool getDiffsets(std::vector<Diffset>&, const Database& db);
-    bool getDiffsets(const SimpleTidList&, std::vector<Diffset>&);
-    int project(const SimpleTidList&, int);
-    int projectConf(const SimpleTidList&, int, double&);
-    std::vector<Diffset> projectDiffsets(const std::vector<Diffset>, int, std::vector<std::pair<int,int> >&);
-    std::vector<Diffset> filterDiffsets(const std::vector<Diffset>, int, std::vector<std::pair<int,int> >&);
-
-    Itemset subsetItems(const Itemset&, const Itemset&);
-    int subsetItems(const Itemset&, int);
-
-protected:
-    int fMinSup;
-    int fMaxSize;
-	Database& fDb;
-    CFDList fCFDs;
-};
-
-#endif // ALGORITHMS_BASEMINER_H_
+#endif //CFDD_GENERATORSTORE_H
