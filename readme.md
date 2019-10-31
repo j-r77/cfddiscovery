@@ -15,6 +15,7 @@ The algorithm takes four mandatory arguments and one optional as input:
 The Data/ folder contains the 3 datasets used in the experimental section, as well as the Contraceptive dataset, taken from the UCI Machine Learning Repository (http://archive.ics.uci.edu/ml/). 
 
 Statistics of the datasets:
+
 Dataset | Nr. Tuples | Nr. Items | Nr. Attributes
 :--- | :--- | :--- | :---
 Adult | 48842 | 202 | 11
